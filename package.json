@@ -4,7 +4,7 @@
   "description": "Examples of networked-aframe",
   "main": "./server/easyrtc-server.js",
   "scripts": {
-    "start": "node ./server/easyrtc-server.js"
+    "start": "PORT=12010 node ./server/easyrtc-server.js"
   },
   "dependencies": {
     "networked-aframe": "^0.11.0"

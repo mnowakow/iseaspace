@@ -40,7 +40,7 @@ document.addEventListener("keydown", (e) => {
         // Check if element ID matches pattern: src/cod + integer(s) + underscore
         const id = element.id;
         if (!/(?:src|cod)\d+_/.test(id)) return;
-        
+
         const key = element.id;
         const el = document.getElementById(key);
         if (el) {
@@ -159,7 +159,7 @@ AFRAME.registerComponent("sblove_register", {
   update: function () {
     var el = this.el;
     const data = this.data.entity.split("|");
-    console.log(data);
+    //console.log(data);
 
     if (data[0].includes("cod")) {
       codes.set(data[0], {
@@ -186,23 +186,25 @@ AFRAME.registerComponent("sblove_deregister", {
   },
   init: function () {
     var el = this.el;
-    console.log(this.data);
+    //console.log(this.data);
   },
   update: function () {
     var el = this.el;
 
     if (this.data.entity.includes("naf")) {
       this.data.entity = this.data.entity.replace("naf-", "");
-      console.log(this.data.entity);
+      //console.log(this.data.entity);
     }
 
     if (this.data.entity.includes("cod")) {
-      codes.delete(this.data.entity);
+      //codes.delete(this.data.entity);
+      codes.delete(this.data.entity.split("_")[0]);
       console.log("deleted cod", codes);
       CodeParser();
     }
     if (this.data.entity.includes("src")) {
-      sources.delete(this.data.entity);
+      //sources.delete(this.data.entity);
+      sources.delete(this.data.entity.split("_")[0]);
       console.log("deleted src", sources);
       CodeParser();
     }
@@ -247,79 +249,110 @@ function distance3d(vec1, vec2) {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-function CodeParser() {
-  console.log("code parser");
 
-  //for (let i = 0; i < sources.size; i++) {
-  Array.from(sources.keys()).forEach((sk) => {
-    //iterate distances with all sources
 
-    let finalCode = "";
-    //let srcPos = sources.get("src" + i);
-    const srcPos = sources.get(sk);
+// Helper: Find element by ID with fallback strategies
+function findElement(baseId) {
+  const searchIds = [baseId + "_" + NAF.clientId, "naf-" + baseId + "_" + NAF.clientId, baseId, "naf-" + baseId];
 
-    if (srcPos) {
-      //for (let j = 0; j < codes.size; j++) {
-      Array.from(codes.keys()).forEach((ck) => {
-        //iterate through all codes
-        let srcCodes = new Map();
+  for (const id of searchIds) {
+    const el = document.getElementById(id);
+    if (el) return el;
+  }
 
-        //let codPos = codes.get("cod" + j);
-        const codPos = codes.get(ck);
+  // Fallback: querySelector for partial match
+  const matches = document.querySelectorAll(`[id*="${baseId}"]`);
+  return matches.length > 0 ? matches[0] : null;
+}
 
-        if (codPos != undefined) {
-          let dist = distance3d(srcPos, codPos);
+function drawLines(nodeIds) {
+  // Remove existing lines from previous calls
+  const existingLines = document.querySelectorAll(".connection-line");
+  existingLines.forEach((line) => line.parentNode?.removeChild(line));
 
-          if (dist <= 10) {
-            //srcCodes.set(dist, "cod" + j);
-            srcCodes.set(dist, ck);
-            let resultedCodes = [...srcCodes.entries()].sort();
-            console.log(resultedCodes);
-            for (const element of resultedCodes) {
-              let elId = element[1] + "_" + NAF.clientId;
-              let el = document.getElementById(elId);
-              if (!el) {
-                el = document.getElementById("naf-" + elId);
-              }
-              if (!el) {
-                el = document.getElementById(element[1]);
-              }
-              if (!el) {
-                // Suche nach Elementen mit anderen Client IDs
-                const allElements = document.querySelectorAll(`[id*="${element[1]}"]`);
-                if (allElements.length > 0) {
-                  el = allElements[0];
-                }
-              }
+  // Draw lines between consecutive nodes
+  for (let i = 0; i < nodeIds.length - 1; i++) {
+    const startEl = findElement(nodeIds[i]);
+    const endEl = findElement(nodeIds[i + 1]);
 
-              let code;
-              if (el && el.components && el.components.text) {
-                code = el.components.text.attrValue.value;
-                if (code == undefined) {
-                  console.log("Code was'undefined'", el, el.components, el.components.text, el.components.text.attrValue);
-                }
-              } else {
-                console.log("Element or text component not found for:", element[1]);
-                continue;
-              }
+    if (startEl && endEl) {
+      const startPos = startEl.getAttribute("position");
+      const endPos = endEl.getAttribute("position");
 
-              if (code == "n") {
-                console.log("number");
-                finalCode = finalCode + "" + Math.round(dist);
-              } else {
-                finalCode = finalCode + "" + code;
-              }
-            }
-          }
-        }
+      const line = document.createElement("a-entity");
+      line.classList.add("connection-line");
+
+      // Calculate distance and midpoint
+      const dx = endPos.x - startPos.x;
+      const dy = endPos.y - startPos.y;
+      const dz = endPos.z - startPos.z;
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      const midX = (startPos.x + endPos.x) / 2;
+      const midY = (startPos.y + endPos.y) / 2;
+      const midZ = (startPos.z + endPos.z) / 2;
+
+      line.setAttribute("geometry", {
+        primitive: "cylinder",
+        radius: 0.02,
+        height: distance,
       });
+      line.setAttribute("material", {
+        color: "#00FF00",
+        opacity: 1,
+      });
+      line.setAttribute("position", `${midX} ${midY} ${midZ}`);
 
-      //let el = document.getElementById("src" + i);
-      let el = document.getElementById(sk);
-      if (!el) {
-        el = document.getElementById("naf-" + sk);
+      // Calculate rotation to point from start to end
+      const direction = new THREE.Vector3(dx, dy, dz).normalize();
+      const axis = new THREE.Vector3(0, 1, 0);
+      const quaternion = new THREE.Quaternion().setFromUnitVectors(axis, direction);
+      const euler = new THREE.Euler().setFromQuaternion(quaternion);
+      line.object3D.rotation.copy(euler);
+
+      document.querySelector("a-scene").appendChild(line);
+    }
+  }
+}
+
+function CodeParser() {
+  // Process each source
+  sources.forEach((srcPos, sourceKey) => {
+    const codesInRange = [];
+
+    // Collect all codes within range
+    codes.forEach((codPos, codeKey) => {
+      const dist = distance3d(srcPos, codPos);
+
+      if (dist <= 10) {
+        const el = findElement(codeKey);
+
+        if (el?.components?.text) {
+          const codeValue = el.components.text.attrValue.value;
+          codesInRange.push({
+            id: codeKey,
+            type: codeValue,
+            dist: dist,
+          });
+        } else {
+          console.log("Element or text component not found for:", codeKey);
+        }
       }
-      el.setAttribute("stackbeat_love", { code: finalCode });
+    });
+
+    // Sort by distance
+    codesInRange.sort((a, b) => a.dist - b.dist);
+
+    // Build final code string
+    const finalCode = codesInRange.map((item) => (item.type === "n" ? Math.round(item.dist) : item.type)).join("");
+    drawLines(codesInRange.map((item) => item.id));
+
+    //console.log(`Source ${sourceKey}: codes in range`, codesInRange, "→", finalCode);
+
+    // Update source with final code
+    const sourceEl = findElement(sourceKey);
+    if (sourceEl) {
+      sourceEl.setAttribute("stackbeat_love", { code: finalCode });
     }
   });
 }
@@ -331,7 +364,7 @@ AFRAME.registerComponent("stackbeat_love", {
   },
   init: function () {
     let el = this.el;
-    console.log(this.data);
+    //(this.data);
     this.el.setAttribute("text", "value", this.data.code);
 
     this.synth = new stackbeatSynth(el);
@@ -345,7 +378,7 @@ AFRAME.registerComponent("stackbeat_love", {
   update: function () {
     var data = this.data;
     var el = this.el;
-    console.log(this.data);
+    //console.log(this.data);
 
     var resonanceRoom = document.querySelector("a-resonance-audio-room");
     el.setAttribute("resonance-audio-src", "room", resonanceRoom);
@@ -404,12 +437,12 @@ AFRAME.registerComponent("stackbeat_love-drop", {
       //check if raycast was outside bbox
       if (!boundingBox.containsPoint(rayOrigin)) {
         deleteEl = evt.target;
-        console.log("Element to Delete", deleteEl);
+        //console.log("Element to Delete", deleteEl);
       }
     });
     el.addEventListener("raycaster-intersected-cleared", (evt) => {
       deleteEl = null;
-      console.log("Element to Delete", deleteEl);
+      //console.log("Element to Delete", deleteEl);
     });
 
     if (isMainsource) {
@@ -555,7 +588,7 @@ AFRAME.registerComponent("follow-ui", {
       //Show me what to Delete!!!
       const targetTextEl = interfaceEl.querySelector("#target-text");
       let targetElVal = "";
-      if (deleteEl) targetElVal = deleteEl?.id.split('_')[0] + ": " + deleteEl?.components.text.attrValue.value;
+      if (deleteEl) targetElVal = deleteEl?.id.split("_")[0] + ": " + deleteEl?.components.text.attrValue.value;
       targetTextEl?.setAttribute("value", targetElVal);
     }
   },
@@ -566,7 +599,7 @@ AFRAME.registerComponent("follow-ui", {
 });
 
 function createFollowUI() {
-  console.log("el", codeEl);
+  //console.log("el", codeEl);
   codeEl.setAttribute("position", "0 2 -2");
   interfaceEl = document.createElement("a-entity");
   const segments = operators.length;
@@ -702,7 +735,7 @@ function createFollowUI() {
   innerDisc.appendChild(targetText);
 
   innerDisc.addEventListener("raycaster-intersection", (e) => {
-    console.log("Raycaster Intersection", e);
+    //console.log("Raycaster Intersection", e);
   });
 
   interfaceEl.appendChild(innerDisc);
