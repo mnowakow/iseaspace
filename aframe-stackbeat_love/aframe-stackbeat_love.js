@@ -10,7 +10,7 @@ let codeEl;
 let cameraEl;
 let deleteEl = null;
 
-const operators = ["+", "-", "*", "/", "0", ">", "<", "$", "_", "#", "~", "!", "%", "&", "*", "|", "^", "@", "n"];
+const operators = ["+", "-", "*", "/", "0", ">", "<", "$", "_", "#", "~", "!", "%", "&", "|", "^", "@", "n"];
 
 // Setup Kill Switch
 // Kill Switch Setup
@@ -153,6 +153,7 @@ AFRAME.registerComponent("sblove_register", {
         x: data[1],
         y: data[2],
         z: data[3],
+        radius: data[4],
       });
     }
   },
@@ -174,6 +175,7 @@ AFRAME.registerComponent("sblove_register", {
         x: data[1],
         y: data[2],
         z: data[3],
+        radius: data[4],
       });
       CodeParser();
     }
@@ -249,8 +251,6 @@ function distance3d(vec1, vec2) {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-
-
 // Helper: Find element by ID with fallback strategies
 function findElement(baseId) {
   const searchIds = [baseId + "_" + NAF.clientId, "naf-" + baseId + "_" + NAF.clientId, baseId, "naf-" + baseId];
@@ -265,10 +265,23 @@ function findElement(baseId) {
   return matches.length > 0 ? matches[0] : null;
 }
 
-function drawLines(nodeIds) {
-  // Remove existing lines from previous calls
-  const existingLines = document.querySelectorAll(".connection-line");
+function drawLines(nodeIds, srcId) {
+  // Remove existing lines for this specific srcId
+  const existingLines = document.querySelectorAll(`.connection-line-${srcId}`);
   existingLines.forEach((line) => line.parentNode?.removeChild(line));
+
+  // Generate a consistent color based on srcId
+  function getColorForSrcId(id) {
+    // Simple hash function to generate consistent color from string
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+      hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue}, 70%, 50%)`;
+  }
+
+  const lineColor = getColorForSrcId(srcId);
 
   // Draw lines between consecutive nodes
   for (let i = 0; i < nodeIds.length - 1; i++) {
@@ -280,7 +293,7 @@ function drawLines(nodeIds) {
       const endPos = endEl.getAttribute("position");
 
       const line = document.createElement("a-entity");
-      line.classList.add("connection-line");
+      line.classList.add("connection-line", `connection-line-${srcId}`);
 
       // Calculate distance and midpoint
       const dx = endPos.x - startPos.x;
@@ -298,7 +311,7 @@ function drawLines(nodeIds) {
         height: distance,
       });
       line.setAttribute("material", {
-        color: "#00FF00",
+        color: lineColor,
         opacity: 1,
       });
       line.setAttribute("position", `${midX} ${midY} ${midZ}`);
@@ -324,7 +337,7 @@ function CodeParser() {
     codes.forEach((codPos, codeKey) => {
       const dist = distance3d(srcPos, codPos);
 
-      if (dist <= 10) {
+      if (dist <= srcPos.radius) {
         const el = findElement(codeKey);
 
         if (el?.components?.text) {
@@ -345,7 +358,7 @@ function CodeParser() {
 
     // Build final code string
     const finalCode = codesInRange.map((item) => (item.type === "n" ? Math.round(item.dist) : item.type)).join("");
-    drawLines(codesInRange.map((item) => item.id));
+    drawLines(codesInRange.map((item) => item.id), sourceKey);
 
     //console.log(`Source ${sourceKey}: codes in range`, codesInRange, "→", finalCode);
 
@@ -405,6 +418,7 @@ AFRAME.registerComponent("stackbeat_love-drop", {
   schema: {
     template: { default: "" },
     keyCode: { default: 48 },
+    radius: { default: 10 },
   },
 
   init: function () {
@@ -455,14 +469,26 @@ AFRAME.registerComponent("stackbeat_love-drop", {
         template: "#stackbeat_love-mainsource-template",
       });
 
+      // this.data.radius = Math.random() * 30 + 10;
+      // console.log("RADIUS:", this.data.radius);
+
       //el.setAttribute("networked", "networkId", "src" + sources.size);
       el.setAttribute("networked", "networkId", sourceId);
       el.setAttribute("position", this.el.getAttribute("position"));
-      el.setAttribute("sblove_register", "entity", sourceId + "|" + this.el.getAttribute("position").x + "|" + this.el.getAttribute("position").y + "|" + this.el.getAttribute("position").z);
+      el.setAttribute(
+        "sblove_register",
+        "entity",
+        sourceId + "|" + this.el.getAttribute("position").x + "|" + this.el.getAttribute("position").y + "|" + this.el.getAttribute("position").z + "|" + this.data.radius
+      );
 
       this.el.sceneEl.appendChild(el);
 
       NAF.utils.getNetworkedEntity(el).then((networkedEl) => {
+        const geom = networkedEl.getAttribute("geometry");
+        networkedEl.setAttribute("geometry", {
+          ...geom,
+          radius: this.data.radius,
+        });
         document.body.dispatchEvent(new CustomEvent("persistentEntityCreated", { detail: { el: el } }));
       });
     } else {
@@ -794,3 +820,117 @@ function createFollowUI() {
     }
   });
 }
+
+AFRAME.registerComponent("player-position-tracker", {
+  init: function () {
+    // Create HUD element
+    this.hudEl = document.createElement("div");
+    this.hudEl.style.position = "fixed";
+    this.hudEl.style.top = "10px";
+    this.hudEl.style.left = "10px";
+    this.hudEl.style.color = "white";
+    this.hudEl.style.fontFamily = "monospace";
+    this.hudEl.style.fontSize = "16px";
+    this.hudEl.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+    this.hudEl.style.padding = "10px";
+    this.hudEl.style.borderRadius = "5px";
+    this.hudEl.style.zIndex = "9999";
+    document.body.appendChild(this.hudEl);
+  },
+  tick: function () {
+    const position = this.el.object3D.position;
+
+    // Find all src elements
+    const srcElements = document.querySelectorAll("[id^='src']");
+    const srcInRange = [];
+
+    srcElements.forEach((el) => {
+      if (el.object3D) {
+        const srcPos = el.object3D.getWorldPosition(new THREE.Vector3());
+        const distance = position.distanceTo(srcPos);
+
+        // Get radius from stackbeat_love component or default to 10
+        const radius = sources.get(el.id)?.radius || 10;
+
+        // Only include if player is within radius
+        if (distance <= radius) {
+          // Find all code elements within this src's radius
+          const closestCodeElements = [];
+          const codeElements = document.querySelectorAll("[id^='cod']");
+
+          codeElements.forEach((codeEl) => {
+            if (codeEl.object3D) {
+              const codePos = codeEl.object3D.getWorldPosition(new THREE.Vector3());
+              const codeDistance = srcPos.distanceTo(codePos);
+              if (codeDistance <= radius) {
+                closestCodeElements.push({
+                  id: codeEl.id,
+                  distance: codeDistance,
+                  value: codeEl.components?.text?.attrValue?.value || "N/A",
+                });
+              }
+            }
+          });
+
+          // Sort by distance
+          closestCodeElements.sort((a, b) => a.distance - b.distance);
+
+          // Find player's position in sequence
+          let playerPositionInSequence = -1;
+          for (let i = 0; i < closestCodeElements.length; i++) {
+            if (distance < closestCodeElements[i].distance) {
+              playerPositionInSequence = i;
+              break;
+            }
+          }
+
+          if (playerPositionInSequence === -1 && closestCodeElements.length > 0) {
+            playerPositionInSequence = closestCodeElements.length;
+          }
+
+          if (playerPositionInSequence !== -1) {
+            closestCodeElements.splice(playerPositionInSequence, 0, {
+              id: "player",
+              distance: distance,
+              value: "?",
+            });
+          }
+
+          srcInRange.push({
+            id: el.id,
+            distance: distance,
+            radius: parseFloat(radius),
+            codes: closestCodeElements,
+          });
+        }
+      }
+    });
+
+    // Build HUD display for all src elements in range
+    let hudContent = `
+      X: ${position.x.toFixed(2)}<br>
+      Y: ${position.y.toFixed(2)}<br>
+      Z: ${position.z.toFixed(2)}<br>
+      <br>
+    `;
+
+    if (srcInRange.length > 0) {
+      srcInRange.forEach((src) => {
+        hudContent += `
+          <strong>${src.id}</strong> (dist: ${src.distance.toFixed(2)}, radius: ${src.radius.toFixed(2)})<br>
+          Codes: ${src.codes.map((c) => c.value).join("")}<br>
+          <br>
+        `;
+      });
+    } else {
+      hudContent += `No src elements in range<br>`;
+    }
+
+    this.hudEl.innerHTML = hudContent;
+  },
+  remove: function () {
+    if (this.hudEl && this.hudEl.parentNode) {
+      this.hudEl.parentNode.removeChild(this.hudEl);
+    }
+  },
+});

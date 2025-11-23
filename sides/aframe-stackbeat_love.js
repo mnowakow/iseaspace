@@ -270,7 +270,7 @@ function CodeParser() {
         if (codPos != undefined) {
           let dist = distance3d(srcPos, codPos);
 
-          if (dist <= 10) {
+          if (dist <= sources.get(sk).radius) {
             //srcCodes.set(dist, "cod" + j);
             srcCodes.set(dist, ck);
             let resultedCodes = [...srcCodes.entries()].sort();

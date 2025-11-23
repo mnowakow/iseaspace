@@ -120,19 +120,6 @@
 
       <a-entity environment="preset: default"></a-entity>
 
-      <!-- <a-entity
-        id="player"
-        networked="template:#avatar-template;attachTemplateToLocal:false;"
-        camera
-        position="0 1.6 0"
-        stackbeat-drop
-        raycaster="objects: .raycastable"
-        wasd-controls="fly:true"
-        look-controls
-      >
-        <a-sphere class="head" visible="false" random-color></a-sphere>
-      </a-entity> -->
-
        <a-entity
         id="player"
         networked="template:#avatar-template;attachTemplateToLocal:false;"
@@ -143,7 +130,10 @@
         wasd-controls="fly:true"
         look-controls
         follow-ui
+        player-position-tracker
       >
+        <a-sphere class="head" visible="false" random-color></a-sphere>
+      </a-entity>
 
       <a-entity
         light="color: #ccccff; intensity: 1; type: ambient;"
